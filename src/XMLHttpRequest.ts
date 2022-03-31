@@ -21,6 +21,10 @@ function _changeReadyState(readyState, event = { readyState }) {
   _triggerEvent.call(this, "readystatechange", event);
 }
 
+function isRelativePath(url) {
+  return !/^(http|https|ftp|file):\/\/.*/i.test(url);
+}
+
 export class XMLHttpRequest extends EventTarget {
   static UNSEND: number;
   static OPENED: number;
@@ -141,8 +145,11 @@ export class XMLHttpRequest extends EventTarget {
         _triggerEvent.call(this, "loadstart");
         _changeReadyState.call(this, XMLHttpRequest.HEADERS_RECEIVED);
         _changeReadyState.call(this, XMLHttpRequest.LOADING);
-
-        this.response = data;
+        if (this._responseType === "json" && typeof data === "string") {
+          this.response = JSON.parse(data);
+        } else {
+          this.response = data;
+        }
 
         if (data instanceof ArrayBuffer) {
           //TODO temporary solution, fix native gc error.
@@ -179,6 +186,34 @@ export class XMLHttpRequest extends EventTarget {
         }
         _triggerEvent.call(this, "loadend");
       };
+
+      // load local file
+      var relativePath = isRelativePath(url);
+      if (relativePath) {
+        var encoding;
+        if (this.responseType !== "arraybuffer") {
+          encoding = "utf8";
+        }
+        var fs = my.getFileSystemManager();
+        var filepath = url;
+        if (url.length >= 1 && url[0] === "/") {
+          filepath = url.substr(1);
+        }
+        if (url.length >= 2 && url[0] === "." && url[1] === "/") {
+          filepath = url.substr(2);
+        }
+
+        var options = {
+          filePath: filepath,
+          success: onSuccess.bind(this),
+          fail: onFail.bind(this)
+        };
+        if (encoding) {
+          options.encoding = encoding;
+        }
+        fs.readFile(options);
+        return;
+      }
 
       let requestTask = my.request({
         data,
